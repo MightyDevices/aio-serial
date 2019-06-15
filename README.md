@@ -2,6 +2,13 @@
 
 A simple yet functional _asyncio_ wrapper for _pyserial_.
 
+## How to install
+1. Clone the repository or use it as a submodulde for your project:
+`git clone https://github.com/MightyDevices/aioserial` OR 
+`git submodule add https://github.com/MightyDevices/aioserial AIOSerial`
+2. Install the requirements: OR for your virtual env
+`pip install -r requirements.txt`
+
 ## How to use
 
 Constructor uses the same parameters as `serial.Serial`. The only difference is 
