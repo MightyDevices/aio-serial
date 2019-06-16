@@ -2,90 +2,27 @@ import serial
 import asyncio as aio
 
 
-# exception
-class AIOSerialQueueClosed(Exception):
-    pass
-
-
-# queue with closed signal
-class AIOSerialQueue(aio.Queue):
-    # constructor
-    def __init__(self, *args, **kwargs):
-        # this event will be used to notify about channel that is represented by
-        # the queue being closed
-        self._closed_ev = aio.Event()
-        # create queue
-        super().__init__(*args, **kwargs)
-
-    # close the queue channel
-    def close(self):
-        # .. by emitting the closed event
-        self._closed_ev.set()
-
-    # get value without waiting
-    def get_nowait(self):
-        # queue empty and closed?
-        if self.qsize() == 0 and self._closed_ev.is_set():
-            raise AIOSerialQueueClosed()
-        # use the underlying implementation
-        return super().get_nowait()
-
-    # get value from queue, values can be fetched even when the queue is closed
-    async def get(self):
-        # got elements in the queue, then there is no need to wait.
-        if self.qsize() > 0:
-            return super().get_nowait()
-        # queue closed
-        elif self._closed_ev.is_set():
-            raise AIOSerialQueueClosed()
-
-        # create two tasks
-        task_q = aio.create_task(super().get())
-        task_e = aio.create_task(self._closed_ev.wait())
-        # wait for the queue to have something for us or wait for the closed
-        # event
-        _, pend = await aio.wait([task_q, task_e],
-                                 return_when=aio.FIRST_COMPLETED)
-        # cancel pending tasks
-        for p in pend:
-            p.cancel()
-        # closed event was set!
-        if task_e.done():
-            raise AIOSerialQueueClosed()
-
-        # get data from the queue
-        return task_q.result()
-
-    # put data into queue without waiting
-    def put_nowait(self, item):
-        # queue is closed
-        if self._closed_ev.is_set():
-            raise AIOSerialQueueClosed()
-        # use underlying implementation
-        super().put_nowait(item)
-
-    # put value into queue
-    async def put(self, item):
-        # queue closed, no point in further processing
-        if self._closed_ev.is_set():
-            raise AIOSerialQueueClosed()
-        # create two tasks
-        task_q = aio.create_task(super().put(item))
-        task_e = aio.create_task(self._closed_ev.wait())
-        # wait for the queue to have something for us or wait for the closed
-        # event
-        _, pend = await aio.wait([task_e, task_q],
-                                 return_when=aio.FIRST_COMPLETED)
-        # cancel pending tasks
-        for p in pend:
-            p.cancel()
-        # closed event was set!
-        if task_e.done():
-            raise AIOSerialQueueClosed()
+# import the queue class
+from AIOSerial.AIOSerialQueue import *
 
 
 # aio serial port exception
 class AIOSerialException(Exception):
+    pass
+
+
+# unable to open the port
+class AIOSerialNotOpenException(AIOSerialException):
+    pass
+
+
+# port is already closed, no communication will take place
+class AIOSerialClosedException(AIOSerialException):
+    pass
+
+
+# port fatal error
+class AIOSerialErrorException(AIOSerialException):
     pass
 
 
@@ -102,12 +39,17 @@ class AIOSerial:
                 raise AIOSerialException()
         # re-raise the exception as AioSerialException
         except (AIOSerialException, serial.SerialException):
-            raise AIOSerialException("Unable to open Serial Port")
-        # are we working with the line mode?
+            raise AIOSerialNotOpenException("Unable to open the Serial Port")
+
+        # are we working with the line mode? This will cause the read
+        # functionality to return full text lines which is often desired
+        # behavior for text protocols
         self.line_mode = line_mode
+
         # reception queue
         self._rxq = AIOSerialQueue()
         self._txq = AIOSerialQueue()
+
         # get current event loop
         self.loop = aio.get_running_loop()
         # receive and transmission tasks
@@ -127,27 +69,28 @@ class AIOSerial:
 
     # close the serial port, do the cleanup
     async def close(self):
-        # start by closing the tx queue
+        # port is open?
+        if self.sp.is_open:
+            # cancel ongoing read-write operation to ensure that rx thread is
+            # not stuck inside the read() function
+            self.sp.cancel_read()
+        # close both queues
         self._txq.close()
-        # wait for tx thread to end processing (meaning that all queue contents
-        # are sent)
-        await self._tx_thread_fut
-
-        # close the rx queue
         self._rxq.close()
-        # cancel ongoing read-write operation
-        self.sp.cancel_read()
-        # wait for the rx/tx thread to end
-        await self._rx_thread_fut
-
-        # and finally close the port
-        self.sp.close()
+        # both of threads may raise an exception in case of port malfunction
+        try:
+            # wait for the rx/tx thread to end, these need to be gathered to
+            # collect all the exceptions
+            await aio.gather(self._tx_thread_fut, self._rx_thread_fut)
+        # ensure that we call the close function no matter what
+        finally:
+            self.sp.close()
 
     # reception thread
     def _rx_thread(self):
         # get the proper read function according to mode
         read_func = self.sp.readline if self.line_mode else self.sp.read
-        # end when rx is done
+        # this loop can only be broken by exceptions
         while True:
             # putting into the rx queue may fail, read may fail as well
             try:
@@ -163,11 +106,14 @@ class AIOSerial:
                 break
             # serial port exceptions
             except serial.SerialException:
+                # create the exception of our own
+                e = AIOSerialErrorException("Serial Port Reception Error")
                 # close the queue
-                aio.run_coroutine_threadsafe(aio.coroutine(self._rxq.close)(),
+                aio.run_coroutine_threadsafe(aio.coroutine(self._rxq.close)(e),
                                              self.loop)
-                # break the loop
-                break
+                # break the loop by rising the exception that will be re-risen
+                # by the close function
+                raise e
 
     # transmission thread
     def _tx_thread(self):
@@ -186,11 +132,13 @@ class AIOSerial:
                 break
             # serial port related exceptions
             except serial.SerialException:
+                # create the exception of our own
+                e = AIOSerialErrorException("Serial Port Transmission Error")
                 # close the queue
-                aio.run_coroutine_threadsafe(aio.coroutine(self._txq.close)(),
+                aio.run_coroutine_threadsafe(aio.coroutine(self._txq.close)(e),
                                              self.loop)
                 # break the loop
-                break
+                raise e
 
     # read from serial port
     async def read(self):
@@ -200,7 +148,7 @@ class AIOSerial:
             return await self._rxq.get()
         # closed queue means closed port
         except AIOSerialQueueClosed:
-            raise AIOSerialException("Serial Port closed!")
+            raise AIOSerialClosedException("Serial Port is closed")
 
     # write to serial port
     async def write(self, data):
@@ -213,4 +161,4 @@ class AIOSerial:
             await self._txq.put(data)
         # closed queue means closed port
         except AIOSerialQueueClosed:
-            raise AIOSerialException("Serial Port closed!")
+            raise AIOSerialClosedException("Serial Port is closed")
