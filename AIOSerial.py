@@ -46,23 +46,23 @@ class AIOSerial:
         # behavior for text protocols
         self.line_mode = line_mode
 
-        # reception queue
+        # reception/transmission queue
         self._rxq = AIOSerialQueue()
         self._txq = AIOSerialQueue()
 
         # get current event loop
         self.loop = aio.get_running_loop()
-        # receive and transmission tasks
+        # create receive and transmission tasks
         self._rx_thread_fut = self.loop.run_in_executor(None, self._rx_thread)
         self._tx_thread_fut = self.loop.run_in_executor(None, self._tx_thread)
 
-    # open the port
+    # called when entering 'async with' block
     async def __aenter__(self):
         # all was done in the constructor, so we can simply return the opened
         # port
         return self
 
-    # close the port
+    # called when exiting 'async with' block
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         # close the port
         await self.close()
@@ -74,9 +74,11 @@ class AIOSerial:
             # cancel ongoing read-write operation to ensure that rx thread is
             # not stuck inside the read() function
             self.sp.cancel_read()
+
         # close both queues
         self._txq.close()
         self._rxq.close()
+
         # both of threads may raise an exception in case of port malfunction
         try:
             # wait for the rx/tx thread to end, these need to be gathered to
@@ -96,15 +98,19 @@ class AIOSerial:
             try:
                 # read from the port
                 data = read_func()
-                # try putting to queue, this will raise an exception when queue
-                # is closed due to port getting closed. we use the result to
+                # try putting the data to the queue, this will raise an
+                # exception when queue is closed which is in turn caused by the
+                # port itself getting closed. we use the result to
                 # raise the exception if any was thrown by the _rxq.put()
                 aio.run_coroutine_threadsafe(self._rxq.put(data),
                                              self.loop).result()
-            # queue closed exception raised? exit the loop
+            # queue closed exception raised? exit the loop gracefully (no
+            # exceptions) as this can only happen when the port is getting
+            # intentionally closed
             except AIOSerialQueueClosed:
                 break
-            # serial port exceptions
+            # serial port exceptions, all of these notify that we are in some
+            # serious trouble
             except serial.SerialException:
                 # create the exception of our own
                 e = AIOSerialErrorException("Serial Port Reception Error")
@@ -112,22 +118,25 @@ class AIOSerial:
                 aio.run_coroutine_threadsafe(aio.coroutine(self._rxq.close)(e),
                                              self.loop)
                 # break the loop by rising the exception that will be re-risen
-                # by the close function
+                # by the 'close' function
                 raise e
 
     # transmission thread
     def _tx_thread(self):
-        # transmission thread runs as long as this flag is valid
+        # this loop can only be broken by exceptions
         while True:
             # this may fail due to serial port or queue
             try:
                 # try getting data from the queue, this will raise an
-                # exception when queue  is closed due to port getting closed
+                # exception when queue is closed due to the fact that port is
+                # getting closed
                 data = aio.run_coroutine_threadsafe(self._txq.get(),
                                                     self.loop).result()
-                # write to serial port
+                # write the data to the serial port
                 self.sp.write(data)
-            # queue closed exception raised? exit the loop
+            # queue closed exception raised? exit the loop gracefully (no
+            # exceptions) as this can only happen when the port is getting
+            # intentionally closed
             except AIOSerialQueueClosed:
                 break
             # serial port related exceptions
@@ -137,7 +146,8 @@ class AIOSerial:
                 # close the queue
                 aio.run_coroutine_threadsafe(aio.coroutine(self._txq.close)(e),
                                              self.loop)
-                # break the loop
+                # break the loop by rising the exception that will be re-risen
+                # by the 'close' function
                 raise e
 
     # read from serial port
