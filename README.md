@@ -4,7 +4,7 @@ A simple yet functional _asyncio_ wrapper for _pyserial_.
 
 ## How to install
 1. Clone the repository or use it as a submodulde for your project:
-`git clone https://github.com/MightyDevices/aioserial` OR 
+`git clone https://github.com/MightyDevices/aioserial AIOSerial` OR 
 `git submodule add https://github.com/MightyDevices/aioserial AIOSerial`
 2. Install the requirements: OR for your virtual env
 `pip install -r requirements.txt`
@@ -16,12 +16,17 @@ that the port name (parameter `port`) must be a valid port name as the port
 will be open during the object creation. No `open` function is present.
 
 Please find the Example.py for the full-blown use case with proper exception 
-handling
+handling. 
+
+Since I've converted this project to become a python module please 
+copy Example.py file to the AIOSerial parent directory before executing
+ 
+`cp Example.py ../Example.py`
 
 **Two ways to open port:**
 
 ```python
-from AIOSerial import AIOSerial
+from AIOSerial.AIOSerial import *
 
 # 1. direct object creation
 aios = AIOSerial('COM3', baudrate=115200)
@@ -45,7 +50,7 @@ like this:**
 
 ```python
 import asyncio as aio
-from AIOSerial import AIOSerial
+from AIOSerial.AIOSerial import *
 
 # open the port with following settings
 async with AIOSerial('COM18', baudrate=115200) as aios:

@@ -1,7 +1,11 @@
 # basic imports
 import asyncio as aio
+
+# Since this is now a python module please copy this example file to the
+# AIOSerial parent directory before executing (cp Example.py ../Example.py)
+
 # all the asyncio-serial port related stuff
-from AIOSerial import AIOSerial, AIOSerialException
+from AIOSerial.AIOSerial import *
 
 
 # port usage example
@@ -14,9 +18,21 @@ async def example():
             # this is the way of accessing the serial port internals directly if
             # you are in need of altering the baudrate, etc..
             aios.sp.baudrate = 230400
+
             # send some data, here we use the AT protocol as it is one of the
             # most popular ways for the communication over the serial port
             await aios.write(b"AT\r\n")
+
+            # uncomment this to get the AIOSerialClosedException
+            #
+            # await aios.close()
+
+            # if you use virtual com port (like in case of usb-usart dongles)
+            # you can test the AIOSerialErrorException by disconnecting the
+            # dongle during following sleep period:
+            #
+            # await aio.sleep(10)
+
             # read may fail if the peer device does not understand the AT
             # command
             try:
@@ -27,8 +43,14 @@ async def example():
             # read timeout
             except aio.TimeoutError:
                 print("reception timed out ;-(")
-    # all serial port related exceptions end up here
-    except AIOSerialException:
+    # unable to open port
+    except AIOSerialNotOpenException:
+        print("Unable to open the port!")
+    # port fatal error
+    except AIOSerialErrorException:
+        print("Port error!")
+    # port already closed
+    except AIOSerialClosedException:
         print("Serial port error!")
 
 

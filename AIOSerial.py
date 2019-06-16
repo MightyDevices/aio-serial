@@ -3,7 +3,7 @@ import asyncio as aio
 
 
 # import the queue class
-from AIOSerial.AIOSerialQueue import *
+from .AIOSerialQueue import *
 
 
 # aio serial port exception
