@@ -5,8 +5,9 @@ A simple yet functional _asyncio_ wrapper for _pyserial_.
 ## How to install
 
 1. Clone the repository or use it as a submodulde for your project:
-`git clone https://github.com/MightyDevices/aioserial AIOSerial` OR 
-`git submodule add https://github.com/MightyDevices/aioserial AIOSerial`
+`git clone --recurse-submodules https://github.com/MightyDevices/aioserial AIOSerial` OR 
+`git submodule add https://github.com/MightyDevices/aioserial AIOSerial` followed by
+`git submodule update --init --recursive AIOSerial`
 2. Install the requirements: `pip install -r requirements.txt`
 
 ## How to use
