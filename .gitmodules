@@ -1,0 +1,3 @@
+[submodule "AIOExtensions"]
+	path = AIOExtensions
+	url = https://github.com/MightyDevices/aio-extensions
