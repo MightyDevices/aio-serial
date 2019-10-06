@@ -6,7 +6,8 @@ import logging
 # AIOSerial parent directory before executing (cp Example.py ../Example.py)
 
 # all the asyncio-serial port related stuff
-from AIOSerial.AIOSerial import *
+from AIOSerial.AIOSerial import (AIOSerial, AIOSerialClosedException, 
+    AIOSerialErrorException, AIOSerialNotOpenException)
 
 # AIOSerial now logs!
 logging.basicConfig(level=logging.DEBUG)

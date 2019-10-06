@@ -39,8 +39,11 @@ class AIOSerial:
             if not self.sp.is_open:
                 raise AIOSerialException()
         # re-raise the exception as AioSerialException
-        except (AIOSerialException, serial.SerialException):
-            raise AIOSerialNotOpenException("Unable to open the Serial Port")
+        except (AIOSerialException, serial.SerialException) as e:
+            # log message
+            log.error("Error during port opening")
+            # re-raise exception
+            raise AIOSerialNotOpenException("Unable to open the port") from e
 
         # are we working with the line mode? This will cause the read
         # functionality to return full text lines which is often desired
@@ -119,6 +122,8 @@ class AIOSerial:
         # serial port exceptions, all of these notify that we are in some
         # serious trouble
         except serial.SerialException:
+            # log message
+            log.error('Serial Port RX error')
             # create the exception of our own
             e = AIOSerialErrorException("Serial Port Reception Error")
             # close the queue
@@ -149,6 +154,8 @@ class AIOSerial:
             pass
         # serial port related exceptions
         except serial.SerialException:
+            # log message
+            log.error('Serial Port TX error')
             # create the exception of our own
             e = AIOSerialErrorException("Serial Port Transmission Error")
             # close the queue
@@ -177,5 +184,5 @@ class AIOSerial:
             # put data to port
             await self._txq.put(data)
         # closed queue means closed port
-        except AIOSerialQueueClosed:
+        except ClosableQueueClosed:
             raise AIOSerialClosedException("Serial Port is closed")
